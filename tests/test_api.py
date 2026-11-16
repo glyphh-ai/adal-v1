@@ -6,6 +6,7 @@ import shutil
 import pytest
 
 from adal import api, server, trainer
+from tests.tiny import TINY
 
 
 @pytest.fixture(autouse=True)
@@ -30,12 +31,11 @@ def test_state_and_corpus():
     assert s == 200 and "tinytales" in d["corpora"] and d["defaults"]["steps"] and d["active"] is None
     s, c = call("GET", "/api/corpus", {"name": "tinytales", "min_freq": "1"})
     assert s == 200 and c["tokens"] > 50000 and c["val_tokens"] > 5000 and 0 < c["baseline_acc"] < 0.5
-    s, t = call("POST", "/api/tokenize", body={"text": "Once upon a time there was a Zorgblat.", "T": 4})
-    assert t["tokens"][0] == "once" and t["unknown"] == ["zorgblat"] and t["window"]["y"][0] == "upon"
+    assert d["defaults"]["corpus"] in d["corpora"]      # the default run can always start
 
 
 def test_a_full_run_streams_saves_and_generates():
-    cfg = dict(steps=120, eval_every=40, C=32, n_layer=2, n_head=2, T=12, name="t")
+    cfg = dict(TINY, steps=120, eval_every=40, n_layer=2, name="t")
     s, d = call("POST", "/api/run/start", body={"cfg": cfg})
     assert s == 200 and d["status"] in ("starting", "running")
     rid = d["id"]
@@ -75,7 +75,7 @@ def test_a_full_run_streams_saves_and_generates():
 def test_pause_resume_stop_through_the_api():
     import time
     s, d = call("POST", "/api/run/start",
-                body={"cfg": dict(steps=10**6, eval_every=10**6, C=16, n_layer=1, n_head=1, T=8)})
+                body={"cfg": dict(TINY, steps=10**6, eval_every=10**6, C=16, n_head=1, T=8)})
     rid = d["id"]
     run = api.manager.get(rid)
     while run.step < 10:
@@ -94,21 +94,14 @@ def test_errors_are_told_not_thrown():
     assert call("GET", "/api/corpus", {"name": "nope"})[0] == 400
     assert call("POST", "/api/generate", body={"id": "nope"})[0] == 400
     assert call("GET", "/api/nothing")[0] == 404
-    s, d = call("POST", "/api/run/start", body={"cfg": dict(lr=1e6, steps=50, C=16, n_head=1, n_layer=1)})
+    s, d = call("POST", "/api/run/start", body={"cfg": dict(TINY, lr=1e6, steps=50, eval_every=50, C=16, n_head=1)})
     run = api.manager.get(d["id"])
     run.join(20)
     assert run.status in ("error", "done")          # a blown-up run reports, it does not hang
 
 
-def test_lesson_source_and_gradcheck():
-    s, les = call("GET", "/api/lesson")
-    assert s == 200 and len(les["steps"]) == 34
-    assert [st["n"] for st in les["steps"]] == list(range(1, 35))
-    assert 'class="fn">tokenize<' in les["steps"][0]["code"] and les["steps"][31]["curve"][-1] < 0.05
-    assert "result: the cat sat down" in les["steps"][33]["example"]
-    words = " ".join(w for w, _ in les["terms"])
-    assert all(t in words for t in ("Head", "MLP", "Stream", "Gradient", "Loss", "Token"))
-    s, src = call("GET", "/api/source")
-    assert any(f["path"] == "adal/model.py" and "attention_bwd" in f["html"] for f in src["files"])
+def test_gradcheck_and_no_teaching_calls():
+    for path in ("/api/lesson", "/api/source"):
+        assert call("GET", path)[0] == 404          # the teaching tabs are not in this harness
     s, gc = call("POST", "/api/gradcheck", body={"n_layer": 2, "n_head": 2})
     assert gc["ok"] and gc["error"] < 1e-6

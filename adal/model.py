@@ -9,7 +9,7 @@ Shapes: B batch, T context length, C width, V vocabulary, H MLP hidden width,
 nh heads, hd = C / nh head width.
 
 Everything here is meant to be edited: the app reloads this file at the start
-of every run and the Learn tab reads its functions straight from the source.
+of every run, so a change takes effect on the next run with nothing to restart.
 """
 
 import math

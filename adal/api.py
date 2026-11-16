@@ -8,14 +8,10 @@ import importlib
 
 import numpy as np
 
-from . import __version__, data, trainer, walkthrough
+from . import __version__, data, trainer
 from . import model as model_module
 
 manager = trainer.Manager()
-
-SOURCE_FILES = ["adal/model.py", "adal/data.py", "adal/trainer.py",
-                "adal/tinytales.py", "adal/walkthrough.py", "adal/api.py",
-                "adal/server.py"]
 
 
 class Refused(Exception):
@@ -24,24 +20,17 @@ class Refused(Exception):
 
 def state(q, b):
     active = manager.active
-    return dict(version=__version__, corpora=data.list_corpora(), defaults=trainer.DEFAULTS,
+    corpora = data.list_corpora()
+    defaults = dict(trainer.DEFAULTS)
+    if defaults["corpus"] not in corpora:      # TinyStories not downloaded yet: `python -m adal fetch`
+        defaults.update(corpus="tinytales", min_freq=1)
+    return dict(version=__version__, corpora=corpora, defaults=defaults,
                 help=trainer.HELP, active=active.summary() if active else None,
                 runs=manager.list())
 
 
 def corpus(q, b):
     return data.load(q.get("name", "tinytales"), int(q.get("min_freq", 1))).stats
-
-
-def tokenize(q, b):
-    ds = data.load(b.get("corpus", "tinytales"), int(b.get("min_freq", 1)))
-    toks, ids = ds.encode_text(b.get("text", ""))
-    T = int(b.get("T", 8))
-    window = None
-    if len(ids) > T:
-        window = dict(x=toks[:T], y=toks[1:T + 1])
-    return dict(tokens=toks, ids=ids, unknown=[t for t, i in zip(toks, ids) if i == 0],
-                window=window, T=T)
 
 
 def run_start(q, b):
@@ -116,18 +105,6 @@ def generate(q, b):
                 attention=[np.round(a, 3).tolist() for a in atts])
 
 
-def lesson(q, b):
-    return walkthrough.build()
-
-
-def source(q, b):
-    files = []
-    for rel in SOURCE_FILES:
-        text = (data.ROOT / rel).read_text()
-        files.append(dict(path=rel, lines=text.count("\n") + 1, html=walkthrough.highlight(text)))
-    return dict(files=files)
-
-
 def gradcheck(q, b):
     """Re-check the hand-written gradients against measured slopes, on the code as it is now."""
     m = importlib.reload(model_module)
@@ -143,16 +120,9 @@ def gradcheck(q, b):
                 weights=int(sum(v.size for v in p.values())))
 
 
-def fetch(q, b):
-    path = data.fetch_tinystories()
-    data.load.cache_clear()
-    return dict(corpora=data.list_corpora(), path=str(path))
-
-
 ROUTES = {
     ("GET", "/api/state"): state,
     ("GET", "/api/corpus"): corpus,
-    ("POST", "/api/tokenize"): tokenize,
     ("POST", "/api/run/start"): run_start,
     ("POST", "/api/run/pause"): run_pause,
     ("POST", "/api/run/resume"): run_resume,
@@ -161,10 +131,7 @@ ROUTES = {
     ("GET", "/api/run"): run_record,
     ("GET", "/api/runs"): runs,
     ("POST", "/api/generate"): generate,
-    ("GET", "/api/lesson"): lesson,
-    ("GET", "/api/source"): source,
     ("POST", "/api/gradcheck"): gradcheck,
-    ("POST", "/api/fetch"): fetch,
 }
 
 

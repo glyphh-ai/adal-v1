@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adal import api, server, trainer  # noqa: E402
+from tests.tiny import TINY  # noqa: E402
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 STATIC = Path(server.STATIC)
@@ -51,7 +52,7 @@ def fixtures(tmp):
         assert s == 200, (path, d)
         return d
 
-    cfg = dict(steps=400, eval_every=50, C=32, n_layer=2, n_head=4, T=16, name="ui check")
+    cfg = dict(TINY, steps=400, eval_every=50, n_layer=2, n_head=4, T=16, name="ui check")
     run_id = post("/api/run/start", {"cfg": cfg})["id"]
     run = api.manager.get(run_id)
     fix["stream"] = list(server.stream(run, tick=0.05))
@@ -59,12 +60,9 @@ def fixtures(tmp):
     live = dict(run.summary(), status="running")
     fix["GET /api/state"] = dict(get("/api/state"), active=live)
     fix["GET /api/corpus"] = get("/api/corpus", {"name": "tinytales", "min_freq": "1"})
-    fix["POST /api/tokenize"] = post("/api/tokenize", {"text": "Once upon a time there was a brave little zebra named Tom.", "T": 8})
     fix["GET /api/runs"] = get("/api/runs")
     fix["GET /api/run"] = get("/api/run", {"id": run_id})
     fix["POST /api/generate"] = post("/api/generate", {"id": run_id, "prompt": "once upon a time there was a", "n": 30})
-    fix["GET /api/lesson"] = get("/api/lesson")
-    fix["GET /api/source"] = get("/api/source")
     fix["POST /api/gradcheck"] = post("/api/gradcheck", {"n_layer": 2, "n_head": 2})
     return fix
 
@@ -84,9 +82,9 @@ def main(out_dir):
         page = page.replace("<head>", f'<head><base href="{STATIC.as_uri()}/">')
         auto = """
 window.addEventListener('load', () => setTimeout(() => {
-  const t = (location.hash || '#learn').slice(1);
+  const t = (location.hash || '#train').slice(1);
   if (t === 'generate') document.querySelector('#gGo').click();
-  if (t === 'code') document.querySelector('#gcGo').click();
+  if (t === 'train') document.querySelector('#gcGo').click();
 }, 400));
 """
         page = page.replace('<script src="vendor/chart.umd.min.js">',
@@ -95,9 +93,8 @@ window.addEventListener('load', () => setTimeout(() => {
         html = Path(tmp) / "app.html"
         html.write_text(page)
         failed = []
-        expect = dict(learn="Check it by hand", data="held out (10%)", train="How we know it works",
-                      generate="block 2 · head 4", runs="ui check", code="Correct: largest gap")
-        heights = dict(learn=3600, data=1500, train=1500, generate=1500, runs=1100, code=1100)
+        expect = dict(train="Correct: largest gap", generate="block 2 · head 4", runs="ui check")
+        heights = dict(train=1500, generate=1500, runs=1100)
         for tab, want in expect.items():
             url = f"{html.as_uri()}#{tab}"
             chrome(f"--window-size=1500,{heights[tab]}", f"--screenshot={out / (tab + '.png')}", url)

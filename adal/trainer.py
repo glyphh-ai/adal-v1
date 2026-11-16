@@ -20,12 +20,14 @@ from . import model as model_module
 
 RUNS = data.ROOT / "runs"
 
+# The default run: about 7 minutes on a laptop CPU, and it ends in a model that writes
+# recognisable TinyStories sentences. Measured numbers are in the README.
 DEFAULTS = dict(
-    name="", corpus="tinytales", min_freq=1,
-    T=16, C=64, mlp_mult=4, n_layer=2, n_head=4,
-    B=32, lr=3e-3, schedule="constant", warmup=0, clip=0.0,
-    steps=1000, eval_every=100, eval_batches=4,
-    sample_words=40, temperature=0.8, seed=0, dtype="float32",
+    name="", corpus="tinystories", min_freq=10,
+    T=32, C=128, mlp_mult=4, n_layer=2, n_head=4,
+    B=32, lr=2e-3, schedule="cosine", warmup=200, clip=1.0,
+    steps=8000, eval_every=500, eval_batches=4,
+    sample_words=60, temperature=0.8, seed=0, dtype="float32",
 )
 
 HELP = dict(

@@ -3,6 +3,7 @@
 import numpy as np
 
 from adal import data, model, trainer
+from tests.tiny import TINY
 
 
 def _tiny(n_layer, n_head, seed=1):
@@ -55,7 +56,7 @@ def test_data_pipeline():
 
 
 def test_training_learns_and_holds_up_on_unseen_text():
-    run = trainer.Run(dict(steps=300, eval_every=100, C=32, n_layer=1, n_head=2, T=12, seed=0),
+    run = trainer.Run(dict(TINY, steps=300, eval_every=100),
                       run_id="_test")
     run.save = lambda: None                       # keep the test off the disk
     run._loop()
@@ -70,7 +71,7 @@ def test_training_learns_and_holds_up_on_unseen_text():
 
 def test_pause_and_stop():
     import time
-    run = trainer.Run(dict(steps=100000, eval_every=100000, C=16, n_layer=1, n_head=1, T=8),
+    run = trainer.Run(dict(TINY, steps=100000, eval_every=100000, C=16, n_head=1, T=8),
                       run_id="_test2")
     run.save = lambda: None
     run.start()

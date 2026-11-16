@@ -69,7 +69,8 @@ def corpus_path(name):
     if name == "tinytales" and not path.exists():
         path.write_text(tinytales.generate())
     if not path.exists():
-        raise FileNotFoundError(f"no corpus {name!r}: put {name}.txt in {DATA}")
+        hint = "run `python -m adal fetch`" if name == "tinystories" else f"put {name}.txt in {DATA}"
+        raise FileNotFoundError(f"no corpus {name!r}: {hint}")
     return path
 
 

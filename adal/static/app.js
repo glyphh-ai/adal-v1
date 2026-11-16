@@ -14,18 +14,17 @@ async function api(path, body) {
   return d;
 }
 
-const S = { state: null, run: null, es: null, charts: {}, loaded: {}, corpus: null, cmp: {}, dirty: false };
-const COLORS = { A: '#b45309', B: '#1d4ed8', C: '#b91c1c', D: '#7c3aed', E: '#047857', F: '#0f766e' };
+const S = { state: null, run: null, es: null, charts: {}, cmp: {}, dirty: false };
 const PALETTE = ['#1d4ed8', '#b91c1c', '#047857', '#b45309', '#7c3aed', '#0f766e', '#be185d', '#4b5563'];
 
 /* ---------------------------------------------------------------- tabs */
 function showTab() {
-  const name = (location.hash || '#learn').slice(1).split('/')[0];
-  const tab = document.getElementById(name) ? name : 'learn';
+  const name = (location.hash || '#train').slice(1).split('/')[0];
+  const tab = document.getElementById(name) ? name : 'train';
   $$('.tab').forEach(t => t.classList.toggle('on', t.id === tab));
   $$('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
-  const init = { learn: loadLesson, data: loadData, generate: fillRunSelect, runs: loadRuns, code: loadSource }[tab];
-  if (init && (!S.loaded[tab] || tab === 'runs' || tab === 'generate')) { S.loaded[tab] = true; init(); }
+  const init = { generate: fillRunSelect, runs: loadRuns }[tab];
+  if (init) init();
   if (tab === 'train') Object.values(S.charts).forEach(c => c.resize && c.resize());
 }
 window.addEventListener('hashchange', showTab);
@@ -177,7 +176,7 @@ function render() {
     const chk = (ok, text) => `<div class="check"><b class="${ok == null ? 'wait' : ok ? 'ok' : 'no'}">${ok == null ? 'wait' : ok ? 'yes' : 'no'}</b><span>${text}</span></div>`;
     const trained = last.step > 0, gc = S.gradcheck;
     $('#checks').innerHTML =
-      chk(gc ? gc.ok : null, gc ? `Gradients match measured slopes (largest gap ${gc.error.toExponential(1)}).` : 'Gradients match measured slopes: run the check in the Code tab.') +
+      chk(gc ? gc.ok : null, gc ? `Gradients match measured slopes (largest gap ${gc.error.toExponential(1)}).` : 'Gradients match measured slopes: press the button below.') +
       chk(trained ? last.val_loss < info.chance_loss : null, `Held-out loss ${num(last.val_loss)} is below blind guessing, ln(V) = ${num(info.chance_loss)}.`) +
       chk(trained ? last.val_acc > info.baseline_acc : null, `Held-out accuracy ${pct(last.val_acc)} beats always saying "${esc(info.baseline_word)}" (${pct(info.baseline_acc)}).`) +
       chk(trained ? Math.abs(last.train_acc - last.val_acc) < 0.08 : null, `Train ${pct(last.train_acc)} and held-out ${pct(last.val_acc)} accuracy are within 8 points: patterns, not memory.`);
@@ -199,103 +198,6 @@ async function control(what) {
     const s = await api('/api/run/' + what, { id: S.run.id });
     S.run.summary = s; render();
   } catch (e) { $('#trainMsg').textContent = e.message; }
-}
-
-/* ---------------------------------------------------------------- learn */
-async function loadLesson() {
-  $('#lesson').innerHTML = '<p class="muted">Running the example…</p>';
-  let L;
-  try { L = await api('/api/lesson'); } catch (e) { $('#lesson').innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
-  const ex = L.example;
-  const exVal = { B: ex.B, T: ex.T, C: ex.C, V: ex.V, H: ex.H, N: ex.B * ex.T };
-  $('#glossary').innerHTML = '<div class="box"><h3>The six letters used in every shape</h3><table class="grid"><tr><th>Letter</th><th>Name</th><th>What it means</th><th>In the example</th></tr>' +
-    L.glossary.map(([s, n, d]) => `<tr><td class="sym">${s}</td><td><b>${esc(n)}</b></td><td>${esc(d)}</td><td class="sym">${exVal[s]}</td></tr>`).join('') +
-    '</table><p class="muted">A shape such as (B,T,C) reads: B windows, each with T positions, each position holding C numbers. Every other word used here is explained just below.</p></div>' +
-    '<div class="box"><h3>Every word this lesson uses</h3><table class="grid"><tr><th>Word</th><th>What it means</th></tr>' +
-    L.terms.map(([w, d]) => `<tr><td style="white-space:nowrap"><b>${esc(w)}</b></td><td>${esc(d)}</td></tr>`).join('') + '</table></div>';
-  const counts = {};
-  L.steps.forEach(s => { (counts[s.stage] = counts[s.stage] || []).push(s.n); });
-  const range = a => (a.length === 1 ? `step ${a[0]}` : `steps ${a[0]} to ${a[a.length - 1]}`);
-  $('#stageNav').innerHTML = Object.entries(L.stages).map(([k, [name]]) =>
-    `<a href="#learn/${k}" data-stage="${k}" style="--c:${COLORS[k]}"><b>${k}</b> ${esc(name)}<span>${range(counts[k]).replace(/steps? /, '')}</span></a>`).join('');
-  let html = '', last = '';
-  for (const s of L.steps) {
-    if (s.stage !== last) {
-      const [name, sub] = L.stages[s.stage];
-      html += `<div class="stage" id="stage${s.stage}" style="--c:${COLORS[s.stage]}"><span class="letter">${s.stage}</span><div><h2>${esc(name)}</h2><p>${esc(sub)} · ${range(counts[s.stage])}</p></div></div>`;
-      last = s.stage;
-    }
-    const note = s.note ? `<p class="hand"><b>${s.check ? 'Check it by hand:' : 'Note:'}</b> ${esc(s.note)}</p>` : '';
-    const mini = s.curve ? `<div class="mini"><canvas id="curve${s.n}"></canvas></div>` : '';
-    html += `<section class="step" id="s${s.n}" style="--c:${COLORS[s.stage]}">
-      <header><span class="num">${s.n}</span><h3>${esc(s.title)}</h3><span class="shape">${esc(s.shape)}</span></header>
-      <p class="why">${s.why}</p><div class="cols">
-      <div class="panel math"><h4>Math</h4><div class="formula">${s.math}</div></div>
-      <div class="panel code"><h4>Python</h4><pre>${s.code}</pre></div>
-      <div class="panel ex"><h4>Example: ${esc(L.text)}</h4><pre>${esc(s.example)}</pre>${mini}${note}</div>
-      </div></section>`;
-  }
-  $('#lesson').innerHTML = html;
-  for (const s of L.steps.filter(x => x.curve)) {
-    const c = lineChart($('#curve' + s.n), [
-      ds('loss', '#1d4ed8', { data: s.curve.map((y, x) => ({ x, y })) }),
-      ds(`guessing`, '#6b7280', { borderDash: [6, 5], borderWidth: 1.5, data: [{ x: 0, y: s.chance }, { x: s.curve.length - 1, y: s.chance }] }),
-    ], '', { y: { min: 0 } });
-    c.options.scales.x.title.text = 'step'; c.update('none');
-  }
-  $$('#stageNav a').forEach(a => a.addEventListener('click', e => {
-    e.preventDefault(); document.getElementById('stage' + a.dataset.stage).scrollIntoView();
-  }));
-}
-function colToggles() {
-  $$('#cols input').forEach(cb => cb.addEventListener('change', () =>
-    $('#lesson').classList.toggle('hide-' + cb.dataset.col, !cb.checked)));
-  $('#reloadLesson').addEventListener('click', loadLesson);
-}
-
-/* ---------------------------------------------------------------- data */
-async function loadData() {
-  $('#dCorpus').innerHTML = S.state.corpora.map(c => `<option>${esc(c)}</option>`).join('');
-  $('#dFetch').hidden = S.state.corpora.includes('tinystories');
-  await showCorpus(); tokenize();
-}
-async function showCorpus() {
-  $('#dMsg').textContent = 'Reading…';
-  try {
-    const c = S.corpus = await api(`/api/corpus?name=${encodeURIComponent($('#dCorpus').value)}&min_freq=${$('#dMinFreq').value}`);
-    const card = (k, v) => `<div class="card"><small>${k}</small><b>${v}</b></div>`;
-    $('#dStats').innerHTML = [
-      card('words in the text', big(c.tokens)), card('distinct words', big(c.distinct_words)),
-      card('vocabulary V', big(c.vocab)), card('turned into &lt;unk&gt;', pct(c.unk_rate)),
-      card('train (90%)', big(c.train_tokens)), card('held out (10%)', big(c.val_tokens)),
-      card('blind guessing loss', num(c.chance_loss, 2)),
-      card(`always "${esc(c.baseline_word)}"`, pct(c.baseline_acc)),
-    ].join('');
-    const max = c.top[0][1];
-    $('#dTop').innerHTML = c.top.slice(0, 20).map(([w, n]) => `<div class="bar"><span class="mono">${esc(w)}</span><i style="width:${100 * n / max}%"></i><span>${big(n)}</span></div>`).join('');
-    $('#dSample').textContent = c.sample;
-    $('#dMsg').textContent = '';
-  } catch (e) { $('#dMsg').textContent = e.message; }
-}
-async function tokenize() {
-  try {
-    const t = await api('/api/tokenize', { text: $('#tokText').value, corpus: $('#dCorpus').value, min_freq: Number($('#dMinFreq').value), T: Number($('#tokT').value) });
-    let h = `<p class="muted">${t.tokens.length} tokens${t.unknown.length ? `, ${t.unknown.length} not in the vocabulary (shown in red, id 0)` : ''}</p><div class="chips">` +
-      t.tokens.map((w, i) => `<span class="chip${t.ids[i] === 0 ? ' unk' : ''}">${esc(w)}<small>${t.ids[i]}</small></span>`).join('') + '</div>';
-    if (t.window) h += `<p class="muted">The first window of T = ${t.T}: the model reads x and must answer y, the same words moved one place on.</p>
-      <div class="chips"><b>x</b>${t.window.x.map(w => `<span class="chip">${esc(w)}</span>`).join('')}</div>
-      <div class="chips"><b>y</b>${t.window.y.map(w => `<span class="chip y">${esc(w)}</span>`).join('')}</div>`;
-    $('#tokOut').innerHTML = h;
-  } catch (e) { $('#tokOut').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
-}
-async function fetchStories() {
-  $('#dMsg').textContent = 'Downloading TinyStories, about 19 MB…';
-  try {
-    const r = await api('/api/fetch', {});
-    S.state.corpora = r.corpora; S.vocab = null;
-    await loadData(); buildForm();
-    $('#dMsg').textContent = 'Downloaded. Pick tinystories; min_freq 10 is a good start.';
-  } catch (e) { $('#dMsg').textContent = e.message; }
 }
 
 /* ---------------------------------------------------------------- generate */
@@ -375,22 +277,12 @@ function drawCompare() {
   S.charts.cmp.update('none');
 }
 
-/* ---------------------------------------------------------------- code */
-async function loadSource() {
-  const { files } = await api('/api/source');
-  const show = i => {
-    $$('#fileList a').forEach((a, j) => a.classList.toggle('on', i === j));
-    $('#fileView').innerHTML = files[i].html;
-    $('#fileView').scrollTop = 0;
-  };
-  $('#fileList').innerHTML = files.map(f => `<a href="#code"><small>${f.lines}</small>${esc(f.path.replace('adal/', ''))}</a>`).join('');
-  $$('#fileList a').forEach((a, i) => a.addEventListener('click', e => { e.preventDefault(); show(i); }));
-  show(0);
-}
+/* ---------------------------------------------------------------- gradient check */
 async function gradcheck() {
   $('#gcMsg').textContent = 'Checking…'; $('#gcMsg').className = 'muted';
   try {
-    const r = S.gradcheck = await api('/api/gradcheck', { n_layer: Number($('#gcL').value), n_head: Number($('#gcH').value) });
+    const c = readCfg();      // a small model with the same number of blocks and heads as the settings
+    const r = S.gradcheck = await api('/api/gradcheck', { n_layer: Math.min(c.n_layer, 4), n_head: Math.min(c.n_head, 8) });
     $('#gcMsg').className = r.ok ? '' : 'err';
     $('#gcMsg').textContent = `${r.ok ? 'Correct' : 'WRONG'}: largest gap ${r.error.toExponential(1)} over ${big(r.weights)} weights (${r.n_layer} blocks, ${r.n_head} heads).`;
     if (S.run) render();
@@ -399,14 +291,10 @@ async function gradcheck() {
 
 /* ---------------------------------------------------------------- start */
 async function main() {
-  makeCharts(); colToggles();
+  makeCharts();
   $('#btnStart').addEventListener('click', startRun);
   $('#btnPause').addEventListener('click', () => control(S.run.summary.status === 'paused' ? 'resume' : 'pause'));
   $('#btnStop').addEventListener('click', () => control('stop'));
-  $('#dLoad').addEventListener('click', async () => { await showCorpus(); tokenize(); });
-  $('#dCorpus').addEventListener('change', async () => { await showCorpus(); tokenize(); });
-  $('#dFetch').addEventListener('click', fetchStories);
-  $('#tokGo').addEventListener('click', tokenize);
   $('#gGo').addEventListener('click', generate);
   $('#gcGo').addEventListener('click', gradcheck);
   S.state = await api('/api/state');
