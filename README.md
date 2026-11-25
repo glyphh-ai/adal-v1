@@ -67,3 +67,8 @@ adal/api.py        every call the app makes, as plain functions
 adal/server.py     a small local web server and the live stream
 adal/static/       the page (plain JavaScript, Chart.js)
 ```
+
+
+## License
+
+Apache-2.0. See LICENSE and NOTICE. Copyright 2026 Chris Timmerman / Glyphh AI LLC. More about it: https://glyphh.ai/projects/adal-v1
